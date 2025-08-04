@@ -23,6 +23,7 @@ from isaaclab.sensors import Camera, Imu, RayCaster, RayCasterCamera, TiledCamer
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv, ManagerBasedRLEnv
+    from isaaclab.managers.command_manager import CommandTerm
 
 
 """
@@ -614,7 +615,20 @@ def generated_commands(env: ManagerBasedRLEnv, command_name: str) -> torch.Tenso
     """The generated command from command term in the command manager with the given name."""
     return env.command_manager.get_command(command_name)
 
-
+def scaled_velocity_commands(env: ManagerBasedRLEnv, command_name: str, scale: list[float]) -> torch.Tensor:
+    """
+    A wrapper function that observes the generated velocity commands and applies a 
+    specified scaling factor on the correct device.
+    """
+    # 1. Get the raw command from the original function
+    #    (or directly from the manager, which is even cleaner)
+    command = env.command_manager.get_command(command_name)
+    
+    # 2. Convert the scale list from the config into a tensor ON THE ENVIRONMENT'S DEVICE
+    scale_tensor = torch.tensor(scale, device=env.device)
+    
+    # 3. Apply the scaling and return the result
+    return command * scale_tensor
 """
 Time.
 """
@@ -628,3 +642,60 @@ def current_time_s(env: ManagerBasedRLEnv) -> torch.Tensor:
 def remaining_time_s(env: ManagerBasedRLEnv) -> torch.Tensor:
     """The maximum time remaining in the episode (in seconds)."""
     return env.max_episode_length_s - env.episode_length_buf.unsqueeze(1) * env.step_dt
+
+def gait_phase_sin_cos(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:
+    """
+    Observes the gait phase from a command generator and encodes it as a 2D
+    sine-cosine vector.
+
+    This is the preferred way to provide cyclical information to a policy, as it
+    avoids the discontinuity at the 0.0/1.0 wrap-around point.
+
+    The observation is zeroed out if the gait frequency is near zero.
+
+    Args:
+        env: The manager-based environment.
+        command_name: The name of the gait command term in the command manager.
+
+    Returns:
+        A tensor of shape (num_envs, 2) containing [cos(2*pi*phase), sin(2*pi*phase)].
+    """
+    # Get the command generator object from the manager
+    gait_command_term: CommandTerm = env.command_manager.get_term(command_name)
+
+    # Access its custom attributes
+    gait_process = gait_command_term.gait_process
+    gait_frequency = gait_command_term.gait_frequency
+
+    # Calculate the angle for the sin/cos encoding
+    angle = 2.0 * torch.pi * gait_process
+
+    # Create the sine and cosine components
+    cos_phase = torch.cos(angle)
+    sin_phase = torch.sin(angle)
+
+    # The original code zeroes out the phase when not moving. We replicate that.
+    is_moving = (gait_frequency > 1.0e-8).float()
+
+    # Stack into a (num_envs, 2) tensor and apply the moving mask
+    return torch.stack([cos_phase * is_moving, sin_phase * is_moving], dim=-1)
+
+def body_mass(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Observes the mass of specified bodies by querying the physics simulation directly.
+
+    This is useful for providing the critic with information about domain randomizations.
+    It calls `get_masses()` to retrieve the most up-to-date mass values.
+    """
+    # Extract the asset from the scene
+    asset: RigidObject | Articulation = env.scene[asset_cfg.name]
+    
+    # Get all masses from the physics engine. THIS MAY RETURN A CPU TENSOR.
+    all_masses = asset.root_physx_view.get_masses()
+
+    # Select the masses for the specified body IDs
+    observed_masses = all_masses[:, asset_cfg.body_ids]
+    
+    # -- THIS IS THE FIX --
+    # Ensure the final tensor is on the same device as the rest of the simulation (the GPU).
+    # Then, flatten the result to ensure a 1D vector per environment.
+    return observed_masses.to(env.device).flatten(start_dim=1)

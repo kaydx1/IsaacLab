@@ -1,12 +1,3 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-
-"""Script to play a checkpoint if an RL agent from RSL-RL."""
-
-"""Launch Isaac Sim Simulator first."""
-
 import argparse
 import sys
 
@@ -128,11 +119,65 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # wrap around environment for rsl-rl
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 
+    # Retrieve the robot articulation asset
+    robot_asset = env.unwrapped.scene["robot"]
+
+    # Print joint names
+    print("[INFO]: Robot Joint Names:")
+    for name in robot_asset.data.joint_names:
+        print(" -", name)
+
+    #print default_joint_pos
+    print("\n[INFO]: Robot Default Joint Positions:")
+    print(robot_asset.data.default_joint_pos)
+    #print default_joint_vel
+    print("\n[INFO]: Robot Default Joint Velocities:")
+    print(robot_asset.data.default_joint_vel)
+    #print default joint pos limits
+    print("\n[INFO]: Robot Default Joint Position Limits:")
+    print(robot_asset.data.default_joint_pos_limits)
+    # Print other joint data from the articulation
+    print("\n[INFO]: Robot Joint Stiffness:")
+    print(robot_asset.data.joint_stiffness)
+
+    print("\n[INFO]: Robot Joint Damping:")
+    print(robot_asset.data.joint_damping)
+
+    print("\n[INFO]: Robot Joint Armature:")
+    print(robot_asset.data.joint_armature)
+
+    print("\n[INFO]: Robot Joint Friction Coefficient:")
+    print(robot_asset.data.joint_friction_coeff)
+
+    print("\n[INFO]: Robot Joint Position Limits:")
+    print(robot_asset.data.joint_pos_limits)
+
+    print("\n[INFO]: Robot Joint Velocity Limits:")
+    print(robot_asset.data.joint_vel_limits)
+
+    print("\n[INFO]: Robot Joint Effort Limits:")
+    print(robot_asset.data.joint_effort_limits)
+
+    #add the same ogging for the default_joint_stiffness and default_joint_damping and default_joint_armature and default_joint_friction_coeff
+    
+    print("\n[INFO]: Robot Default Joint Armature:")
+    print(robot_asset.data.default_joint_armature)
+    print("\n[INFO]: Robot Default Joint Stiffness:")
+    print(robot_asset.data.default_joint_stiffness)     
+    print("\n[INFO]: Robot Default Joint Damping:")
+    print(robot_asset.data.default_joint_damping)
+    print("\n[INFO]: Robot Default Joint Friction Coefficient:")
+    print(robot_asset.data.default_joint_friction_coeff)
+
+
+
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
     # load previously trained model
     ppo_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+    print("[INFO]: Loading model to ppo_runner")
     ppo_runner.load(resume_path)
 
+    print("[INFO]: getting inference policy")
     # obtain the trained policy for inference
     policy = ppo_runner.get_inference_policy(device=env.unwrapped.device)
 
@@ -145,6 +190,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         # version 2.2 and below
         policy_nn = ppo_runner.alg.actor_critic
 
+    print("[INFO]: exporting policy to ONNX and JIT formats")
     # export policy to onnx/jit
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
     export_policy_as_jit(policy_nn, ppo_runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
@@ -166,6 +212,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             actions = policy(obs)
             # env stepping
             obs, _, _, _ = env.step(actions)
+            # print(obs)
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video

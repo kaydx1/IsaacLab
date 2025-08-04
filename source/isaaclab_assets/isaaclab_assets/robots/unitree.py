@@ -19,7 +19,7 @@ Reference: https://github.com/unitreerobotics/unitree_ros
 """
 
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import ActuatorNetMLPCfg, DCMotorCfg, ImplicitActuatorCfg
+from isaaclab.actuators import ActuatorNetMLPCfg, DCMotorCfg, ImplicitActuatorCfg, IdealPDActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
@@ -265,6 +265,181 @@ H1_MINIMAL_CFG.spawn.usd_path = f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/H1/h1_mi
 
 This configuration removes most collision meshes to speed up simulation.
 """
+H1_CFG_CUSTOM = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path="/home/olegkaidanov/IsaacLab/assets/h1_minimal.usd",
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=1.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False, solver_position_iteration_count=4, solver_velocity_iteration_count=4
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 1.05),
+        joint_pos={
+            ".*_hip_yaw": 0.0,
+            ".*_hip_roll": 0.0,
+            ".*_hip_pitch": 0.0,
+            ".*_knee": 0.0,
+            ".*_ankle": 0.0,
+            "torso": 0.0,
+            ".*_shoulder_pitch": 0.0,
+            ".*_shoulder_roll": 0.0,
+            ".*_shoulder_yaw": 0.0,
+            ".*_elbow": 0.0,
+        },
+        joint_vel={".*": 0.0},
+    ),
+    soft_joint_pos_limit_factor=0.9,
+    actuators={
+        "legs": IdealPDActuatorCfg(
+            joint_names_expr=[".*_hip_yaw", ".*_hip_roll", ".*_hip_pitch", ".*_knee", "torso"],
+            effort_limit={
+                ".*_hip_yaw": 40,
+                ".*_hip_roll": 40,
+                ".*_hip_pitch": 40,
+                ".*_knee": 60,
+                "torso": 80,
+            },
+            stiffness={
+                ".*_hip_yaw": 150.0,
+                ".*_hip_roll": 150.0,
+                ".*_hip_pitch": 150.0,
+                ".*_knee": 150.0,
+                "torso": 200.0,
+            },
+            damping={
+                ".*_hip_yaw": 2.0,
+                ".*_hip_roll": 2.0,
+                ".*_hip_pitch": 2.0,
+                ".*_knee": 4.0,
+                "torso": 6.0,
+            },
+        ),
+        "feet": IdealPDActuatorCfg(
+            joint_names_expr=[".*_ankle"],
+            effort_limit=30,
+            stiffness={".*_ankle": 40.0},
+            damping={".*_ankle": 2.0},
+        ),
+        "arms": IdealPDActuatorCfg(
+            joint_names_expr=[".*_shoulder_pitch", ".*_shoulder_roll", ".*_shoulder_yaw", ".*_elbow"],
+            effort_limit={
+                ".*_shoulder_pitch": 20,
+                ".*_shoulder_roll": 20,
+                ".*_shoulder_yaw": 9,
+                ".*_elbow": 9,
+            },
+            stiffness={
+                ".*_shoulder_pitch": 80.0,
+                ".*_shoulder_roll": 80.0,
+                ".*_shoulder_yaw": 80.0,
+                ".*_elbow": 80.0,
+            },
+            damping={
+                ".*_shoulder_pitch": 2.0,
+                ".*_shoulder_roll": 2.0,
+                ".*_shoulder_yaw": 2.0,
+                ".*_elbow": 2.0,
+            },
+        ),
+    },
+)
+"""Configuration for the Unitree H1 Humanoid robot."""
+
+H1_MINIMAL_CFG_CUSTOM = H1_CFG_CUSTOM.copy()
+H1_MINIMAL_CFG_CUSTOM.spawn.usd_path = f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/H1/h1_minimal.usd"
+
+H1_CFG_CUSTOM_DFKI = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path="/home/olegkaidanov/IsaacLab/assets/h1_dfki/h1_dfki.usd",
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=1.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False, solver_position_iteration_count=4, solver_velocity_iteration_count=4
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 1.05),
+        joint_pos={
+            "hip_rotation_.*": 0.0,
+            "hip_adduction_.*": 0.0,
+            "hip_flexion_.*": 0.0,
+            "knee_angle_.*": 0.0,
+            "ankle_angle_.*": 0.0,
+            "back_bkz": 0.0,
+            ".*_arm_sh[x-z]": 0.0,
+            ".*_elbow": 0.0,
+        },
+        joint_vel={".*": 0.0},
+    ),
+    soft_joint_pos_limit_factor=0.9,
+    actuators={
+        "legs": IdealPDActuatorCfg(
+            joint_names_expr=["hip_rotation_.*", "hip_adduction_.*", "hip_flexion_.*", "knee_angle_.*", "back_bkz"],
+            effort_limit={
+                "hip_rotation_.*": 40,
+                "hip_adduction_.*": 40,
+                "hip_flexion_.*": 40,
+                "knee_angle_.*": 60,
+                "back_bkz": 80,
+            },
+            stiffness={
+                "hip_rotation_.*": 150.0,
+                "hip_adduction_.*": 150.0,
+                "hip_flexion_.*": 150.0,
+                "knee_angle_.*": 150.0,
+                "back_bkz": 200.0,
+            },
+            damping={
+                "hip_rotation_.*": 2.0,
+                "hip_adduction_.*": 2.0,
+                "hip_flexion_.*": 2.0,
+                "knee_angle_.*": 4.0,
+                "back_bkz": 6.0,
+            },
+        ),
+        "feet": IdealPDActuatorCfg(
+            joint_names_expr=["ankle_angle_.*"],
+            effort_limit=30,
+            stiffness={"ankle_angle_.*": 40.0},
+            damping={"ankle_angle_.*": 2.0},
+        ),
+        "arms": IdealPDActuatorCfg(
+            joint_names_expr=[".*_arm_sh[x-z]", ".*_elbow"],
+            effort_limit={
+                ".*_arm_shx": 20,
+                ".*_arm_shz": 20,
+                ".*_arm_shy": 9,
+                ".*_elbow": 9,
+            },
+            stiffness={
+                ".*_arm_sh[x-z]": 80.0,
+                ".*_elbow": 80.0,
+            },
+            damping={
+                ".*_arm_sh[x-z]": 2.0,
+                ".*_elbow": 2.0,
+            },
+        ),
+    },
+)
 
 
 G1_CFG = ArticulationCfg(

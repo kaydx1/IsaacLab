@@ -22,6 +22,7 @@ from isaaclab.sensors import ContactSensor, RayCaster
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
+    from isaaclab.managers.command_manager import CommandTerm
 
 """
 General.
@@ -317,3 +318,100 @@ def track_ang_vel_z_exp(
     # compute the error
     ang_vel_error = torch.square(env.command_manager.get_command(command_name)[:, 2] - asset.data.root_ang_vel_b[:, 2])
     return torch.exp(-ang_vel_error / std**2)
+
+def torque_tiredness_l2(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalize torque tiredness, based on normalized squared torques."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    # Normalize torques by the effort limits and clip
+    normalized_torques = asset.data.applied_torque[:, asset_cfg.joint_ids] / asset.data.joint_effort_limits[:, asset_cfg.joint_ids]
+    # Return the sum of squares of the clipped normalized torques
+    return torch.sum(torch.square(normalized_torques.clip(max=1.0)), dim=1)
+
+def positive_power_l1(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalize positive power consumption (sum of torque * velocity)."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    torques = asset.data.applied_torque[:, asset_cfg.joint_ids]
+    velocities = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    # Calculate power and clip negative values to zero
+    power = (torques * velocities).clip(min=0.0)
+    return torch.sum(power, dim=1)
+
+def joint_torque_limits(env: ManagerBasedRLEnv, soft_ratio: float, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalize torques that exceed a soft limit."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    # Define soft limits as a percentage of the hard limits
+    soft_limits = asset.data.joint_effort_limits[:, asset_cfg.joint_ids] * soft_ratio
+    # Calculate how much the absolute torque is over the soft limit
+    out_of_limits = (torch.abs(asset.data.applied_torque[:, asset_cfg.joint_ids]) - soft_limits).clip(min=0.0)
+    return torch.sum(out_of_limits, dim=1)
+
+def feet_slip_l2(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Penalize the squared tangential velocity of feet that are in contact with the ground."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    # Check which feet are in contact (force > 1.0 N)
+    in_contact = contact_sensor.data.net_forces_w_history[:, -1, sensor_cfg.body_ids].norm(dim=-1) > 1.0
+    # Get the linear velocity of the feet in the XY plane
+    foot_velocities_xy = asset.data.body_lin_vel_w[:, sensor_cfg.body_ids, :2]
+    # Calculate the squared slip velocity
+    slip_l2 = torch.sum(torch.square(foot_velocities_xy), dim=-1)
+    # Apply penalty only to feet that are in contact and after the first step
+    slip_penalty = slip_l2 * in_contact * (env.episode_length_buf > 1).unsqueeze(-1)
+    return torch.sum(slip_penalty, dim=1)
+
+def feet_swing_phase_reward(
+    env: ManagerBasedRLEnv,
+    swing_period: float,
+    command_name: str,
+    sensor_cfg: SceneEntityCfg,
+    contact_threshold: float = 1.0,
+) -> torch.Tensor:
+    """
+    Rewards the robot for swinging the correct foot at the correct time in the gait cycle.
+
+    This reward is based on a target gait phase and frequency provided by a command generator.
+    It rewards a foot for being off the ground (swinging) only when it is in its
+    designated swing phase window.
+
+    Args:
+        env: The manager-based environment.
+        swing_period: The duration of the swing phase window (in terms of phase, e.g., 0.2).
+        command_name: The name of the gait command term in the command manager.
+        sensor_cfg: Configuration for the contact sensor, specifying which sensor to use and
+            the names of the foot bodies in [left, right] order.
+        contact_threshold: The force threshold (in Newtons) to determine if a foot is in contact.
+    """
+    # -- Extract data from the Command Manager --
+    # Get the command generator object (not just the command tensor)
+    gait_command_term: CommandTerm = env.command_manager.get_term(command_name)
+    # Access its custom attributes
+    gait_process = gait_command_term.gait_process
+    gait_frequency = gait_command_term.gait_frequency
+
+    # -- Extract data from the Contact Sensor --
+    # Get the sensor object from the scene
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    # Find the body indices corresponding to the foot names
+    foot_ids = contact_sensor.find_bodies(sensor_cfg.body_names)[0]
+    if len(foot_ids) != 2:
+        raise ValueError(f"Expected 2 foot bodies for swing reward, but found {len(foot_ids)}.")
+
+    # Determine if feet are in contact (True if contact force > threshold)
+    # We check the last history frame [-1] and get the norm of the force vector
+    net_forces = contact_sensor.data.net_forces_w_history[:, -1, foot_ids]
+    feet_contact = torch.norm(net_forces, dim=-1) > contact_threshold
+
+    # -- Compute the Reward using the original logic --
+    # Left foot is expected to swing around the 0.25 phase mark
+    left_swing_phase = (torch.abs(gait_process - 0.25) < 0.5 * swing_period) & (gait_frequency > 1.0e-8)
+    
+    # Right foot is expected to swing around the 0.75 phase mark
+    right_swing_phase = (torch.abs(gait_process - 0.75) < 0.5 * swing_period) & (gait_frequency > 1.0e-8)
+    
+    # Reward is 1 if the foot is in its swing phase AND it is not in contact
+    # feet_contact[:, 0] corresponds to the left foot (the first body in sensor_cfg.body_names)
+    # feet_contact[:, 1] corresponds to the right foot (the second body)
+    left_reward = (left_swing_phase & ~feet_contact[:, 0]).float()
+    right_reward = (right_swing_phase & ~feet_contact[:, 1]).float()
+    
+    return left_reward + right_reward
