@@ -65,7 +65,8 @@ class MySceneCfg(InteractiveSceneCfg):
 
     height_scanner = None
 
-    contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/pelvis/.*", history_length=3, track_air_time=True)
+    # contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/pelvis/.*", history_length=3, track_air_time=True)
+    contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True)
 
     # lights
     sky_light = AssetBaseCfg(
@@ -198,8 +199,8 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.8, 0.8),
-            "dynamic_friction_range": (0.6, 0.6),
+            "static_friction_range": (0.7, 1.2),
+            "dynamic_friction_range": (0.6, 1.2),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 64,
         },
@@ -210,7 +211,7 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
-            "mass_distribution_params": (-2.0, 2.0),
+            "mass_distribution_params": (-3.0, 3.0),
             "operation": "add",
         },
     )
@@ -220,7 +221,7 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="pelvis"),
-            "com_range": {"x": (-0.1, 0.1), "y": (-0.05, 0.05), "z": (-0.01, 0.01)},
+            "com_range": {"x": (-0.1, 0.1), "y": (-0.1, 0.1), "z": (-0.01, 0.01)},
         },
     )
 
@@ -255,7 +256,7 @@ class EventCfg:
         func=mdp.reset_joints_by_scale,
         mode="reset",
         params={
-            "position_range": (0.5, 1.5),
+            "position_range": (0.8, 1.2),
             "velocity_range": (0.0, 0.0),
         },
     )
@@ -264,7 +265,7 @@ class EventCfg:
     push_robot = EventTerm(
         func=mdp.push_by_setting_velocity,
         mode="interval",
-        interval_range_s=(10.0, 15.0),
+        interval_range_s=(5.0, 7.0),
         params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
     )
 
@@ -520,29 +521,29 @@ class H1Rewards:
 
     # joint_deviation_arms = RewTerm(
     #     func=mdp.joint_deviation_l1,
-    #     weight=-0.2,
+    #     weight=-0.3,
     #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder_.*", ".*_elbow"])},
     # )
     # joint_deviation_torso = RewTerm(
-    #     func=mdp.joint_deviation_l1, weight=-0.1, params={"asset_cfg": SceneEntityCfg("robot", joint_names="torso")}
+    #     func=mdp.joint_deviation_l1, weight=-0.2, params={"asset_cfg": SceneEntityCfg("robot", joint_names="torso")}
     # )
 
     # joint_deviation_arms = RewTerm(
     #     func=mdp.joint_deviation_l1,
-    #     weight=-0.2,
+    #     weight=-0.5,
     #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_arm_sh.*", ".*_elbow"])},
     # )
 
     # joint_deviation_torso = RewTerm(
     #     func=mdp.joint_deviation_l1,
-    #     weight=-0.1,
+    #     weight=-0.2,
     #     params={"asset_cfg": SceneEntityCfg("robot", joint_names="back.*")}
     # )
 
 @configclass
 class H1RoughEnvCfg(ManagerBasedRLEnvCfg):
     # Scene settings
-    scene: MySceneCfg = MySceneCfg(num_envs=2048, env_spacing=2.5)
+    scene: MySceneCfg = MySceneCfg(num_envs=4096, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -580,7 +581,10 @@ class H1RoughEnvCfg(ManagerBasedRLEnvCfg):
 
 
         # Scene
-        self.scene.robot = H1_CFG_CUSTOM_DFKI.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        # self.scene.robot = H1_CFG_CUSTOM_DFKI.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = H1_CFG_CUSTOM.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        # Events
         self.events.base_external_force_torque.params["asset_cfg"].body_names = [".*torso_link"]
         self.events.reset_base.params={
             "pose_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5), "yaw": (-3.14, 3.14)},
@@ -604,7 +608,7 @@ class H1RoughEnvCfg_PLAY(H1RoughEnvCfg):
         super().__post_init__()
 
         # make a smaller scene for play
-        self.scene.num_envs = 4
+        self.scene.num_envs = 1
         self.scene.env_spacing = 2.5
         self.episode_length_s = 40.0
         # spawn the robot randomly in the grid (instead of their terrain levels)
@@ -621,8 +625,9 @@ class H1RoughEnvCfg_PLAY(H1RoughEnvCfg):
         # disable randomization for play
         self.observations.policy.enable_corruption = False
         # remove random pushing
+        self.events.add_base_mass = None
+        self.events.base_com = None
         self.events.base_external_force_torque = None
-        self.events.push_robot = None
         self.events.reset_robot_joints.params = {
             "position_range": (0.0, 0.0),
             "velocity_range": (0.0, 0.0),

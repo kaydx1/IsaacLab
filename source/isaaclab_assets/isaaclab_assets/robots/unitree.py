@@ -266,8 +266,9 @@ H1_MINIMAL_CFG.spawn.usd_path = f"{ISAACLAB_NUCLEUS_DIR}/Robots/Unitree/H1/h1_mi
 This configuration removes most collision meshes to speed up simulation.
 """
 H1_CFG_CUSTOM = ArticulationCfg(
+    actuator_value_resolution_debug_print=True,
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/home/olegkaidanov/IsaacLab/assets/h1_minimal.usd",
+        usd_path="/home/olegkaidanov/IsaacLab/assets/h1_minimal_readable.usda",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -323,12 +324,28 @@ H1_CFG_CUSTOM = ArticulationCfg(
                 ".*_knee": 4.0,
                 "torso": 6.0,
             },
+            friction={
+                ".*_hip_yaw": 0.1,
+                ".*_hip_roll": 0.1,
+                ".*_hip_pitch": 0.1,
+                ".*_knee": 0.1,
+                "torso": 0.1,
+            },
+            armature={
+                ".*_hip_yaw": 0.01,
+                ".*_hip_roll": 0.01,
+                ".*_hip_pitch": 0.01,
+                ".*_knee": 0.01,
+                "torso": 0.01,
+            },
         ),
         "feet": IdealPDActuatorCfg(
             joint_names_expr=[".*_ankle"],
             effort_limit=30,
             stiffness={".*_ankle": 40.0},
             damping={".*_ankle": 2.0},
+            friction={".*_ankle": 0.1},
+            armature={".*_ankle": 0.01},
         ),
         "arms": IdealPDActuatorCfg(
             joint_names_expr=[".*_shoulder_pitch", ".*_shoulder_roll", ".*_shoulder_yaw", ".*_elbow"],
@@ -349,6 +366,18 @@ H1_CFG_CUSTOM = ArticulationCfg(
                 ".*_shoulder_roll": 2.0,
                 ".*_shoulder_yaw": 2.0,
                 ".*_elbow": 2.0,
+            },
+            friction={
+                ".*_shoulder_pitch": 0.1,
+                ".*_shoulder_roll": 0.1,
+                ".*_shoulder_yaw": 0.1,
+                ".*_elbow": 0.1,
+            },
+            armature={
+                ".*_shoulder_pitch": 0.01,
+                ".*_shoulder_roll": 0.01,
+                ".*_shoulder_yaw": 0.01,
+                ".*_elbow": 0.01,
             },
         ),
     },

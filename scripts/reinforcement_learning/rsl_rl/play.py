@@ -169,6 +169,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print("\n[INFO]: Robot Default Joint Friction Coefficient:")
     print(robot_asset.data.default_joint_friction_coeff)
 
+    # Extract and print all link masses with corresponding body names
+    robot_masses = robot_asset.root_physx_view.get_masses()
+    body_names = robot_asset.data.body_names
+
+    #print body names 
+    print("\n[INFO]: Robot Body Names:")
+    for name in body_names:
+        print(" -", name)
+
+    print("\n[INFO]: Robot Link Masses:")
+    for name, mass in zip(body_names, robot_masses):
+        print(f" - {name}: {mass}")
+
+    total_mass = robot_masses.sum().item()
+    print(f"\n[INFO]: Total Robot Mass: {total_mass:.4f}")
+
 
 
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
