@@ -63,7 +63,15 @@ class MySceneCfg(InteractiveSceneCfg):
     # robots
     robot: ArticulationCfg = MISSING
 
-    height_scanner = None
+    height_scanner = RayCasterCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/torso_link",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+        # attach_yaw_only=True,
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
 
     # contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/pelvis/.*", history_length=3, track_air_time=True)
     contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True)
@@ -199,20 +207,20 @@ class EventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "static_friction_range": (0.7, 1.2),
-            "dynamic_friction_range": (0.6, 1.2),
-            "restitution_range": (0.0, 0.0),
+            "static_friction_range": (0.4, 1.0),
+            "dynamic_friction_range": (0.4, 1.0),
+            "restitution_range": (0.0, 1.0),
             "num_buckets": 64,
         },
     )
 
-    add_base_mass = EventTerm(
+    add_body_mass = EventTerm(
         func=mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
-            "mass_distribution_params": (-3.0, 3.0),
-            "operation": "add",
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+            "mass_distribution_params": (0.8, 1.2),
+            "operation": "scale",
         },
     )
 
@@ -220,10 +228,11 @@ class EventCfg:
         func=mdp.randomize_rigid_body_com,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="pelvis"),
-            "com_range": {"x": (-0.1, 0.1), "y": (-0.1, 0.1), "z": (-0.01, 0.01)},
+            "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
+            "com_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "z": (-0.02, 0.02)},
         },
     )
+
 
     # reset
     base_external_force_torque = EventTerm(
@@ -252,12 +261,47 @@ class EventCfg:
         },
     )
 
-    reset_robot_joints = EventTerm(
-        func=mdp.reset_joints_by_scale,
+    # reset_robot_joints = EventTerm(
+    #     func=mdp.reset_joints_by_scale,
+    #     mode="reset",
+    #     params={
+    #         "position_range": (0.8, 1.2),
+    #         "velocity_range": (0.0, 0.0),
+    #     },
+    # )
+
+    randomize_reset_joints = EventTerm(
+        # func=mdp.reset_joints_by_scale,
+        func=mdp.reset_joints_by_offset,
         mode="reset",
         params={
-            "position_range": (0.8, 1.2),
-            "velocity_range": (0.0, 0.0),
+            "position_range": (-0.2, 0.2),
+            "velocity_range": (-0.5, 0.5),
+        },
+    )
+
+
+    randomize_actuator_gains = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (0.8, 1.2),
+            "damping_distribution_params": (0.8, 1.2),
+            "operation": "scale",
+            "distribution": "log_uniform",
+        },
+    )
+
+    robot_joint_friction_and_armature = EventTerm(
+        func=mdp.randomize_joint_parameters,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "friction_distribution_params": (0.9, 1.1),
+            "armature_distribution_params": (0.9, 1.1),
+            "operation": "scale",
+            "distribution": "uniform",
         },
     )
 
@@ -268,6 +312,7 @@ class EventCfg:
         interval_range_s=(5.0, 7.0),
         params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
     )
+
 
 
 # @configclass
@@ -330,7 +375,7 @@ class RewardsCfg:
         func=mdp.base_height_l2, 
         weight=-5.0, 
         params={
-            "target_height": 1.0,
+            "target_height": 0.9,
             # Assumes a downward-facing ray-caster sensor is configured on the robot for terrain height
             "sensor_cfg": SceneEntityCfg("height_scanner") 
         }
@@ -381,11 +426,19 @@ class TerminationsCfg:
     """Termination terms for the MDP."""
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    base_height = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.3})
     base_contact = DoneTerm(
         func=mdp.illegal_contact,
-        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*torso_link"), "threshold": 1.0},
+        params={
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=[
+                    "torso_link",
+                ],
+            ),
+            "threshold": 1.0,
+        },
     )
-
 
 @configclass
 class CurriculumCfg:
@@ -469,7 +522,9 @@ class H1Rewards:
         func=mdp.base_height_l2, 
         weight=-5.0, 
         params={
-            "target_height": 1.0,
+            "target_height": 0.9,
+            # Assumes a downward-facing ray-caster sensor is configured on the robot for terrain height
+            "sensor_cfg": SceneEntityCfg("height_scanner") 
         }
     )
     orientation = RewTerm(func=mdp.flat_orientation_l2, weight=-1.0)
@@ -519,26 +574,14 @@ class H1Rewards:
         },
     )
 
-    # joint_deviation_arms = RewTerm(
-    #     func=mdp.joint_deviation_l1,
-    #     weight=-0.3,
-    #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder_.*", ".*_elbow"])},
-    # )
-    # joint_deviation_torso = RewTerm(
-    #     func=mdp.joint_deviation_l1, weight=-0.2, params={"asset_cfg": SceneEntityCfg("robot", joint_names="torso")}
-    # )
-
-    # joint_deviation_arms = RewTerm(
-    #     func=mdp.joint_deviation_l1,
-    #     weight=-0.5,
-    #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_arm_sh.*", ".*_elbow"])},
-    # )
-
-    # joint_deviation_torso = RewTerm(
-    #     func=mdp.joint_deviation_l1,
-    #     weight=-0.2,
-    #     params={"asset_cfg": SceneEntityCfg("robot", joint_names="back.*")}
-    # )
+    joint_deviation_arms = RewTerm(
+        func=mdp.joint_deviation_l1,
+        weight=-0.3,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_shoulder_.*", ".*_elbow_.*"])},
+    )
+    joint_deviation_torso = RewTerm(
+        func=mdp.joint_deviation_l1, weight=-0.2, params={"asset_cfg": SceneEntityCfg("robot", joint_names="torso_joint")}
+    )
 
 @configclass
 class H1RoughEnvCfg(ManagerBasedRLEnvCfg):
@@ -608,7 +651,7 @@ class H1RoughEnvCfg_PLAY(H1RoughEnvCfg):
         super().__post_init__()
 
         # make a smaller scene for play
-        self.scene.num_envs = 1
+        self.scene.num_envs = 32
         self.scene.env_spacing = 2.5
         self.episode_length_s = 40.0
         # spawn the robot randomly in the grid (instead of their terrain levels)
@@ -619,16 +662,16 @@ class H1RoughEnvCfg_PLAY(H1RoughEnvCfg):
             self.scene.terrain.terrain_generator.num_cols = 5
             self.scene.terrain.terrain_generator.curriculum = False
 
-        self.commands.base_velocity.ranges.lin_vel_x = (0.0, 0.0)
+        self.commands.base_velocity.ranges.lin_vel_x = (0.0, 1.0)
         self.commands.base_velocity.ranges.lin_vel_y = (0.0, 0.0)
-        self.commands.base_velocity.ranges.ang_vel_yaw = (0.0, 0.0)
+        self.commands.base_velocity.ranges.ang_vel_yaw = (0.0, 1.0)
         # disable randomization for play
         self.observations.policy.enable_corruption = False
         # remove random pushing
         self.events.add_base_mass = None
         self.events.base_com = None
         self.events.base_external_force_torque = None
-        self.events.reset_robot_joints.params = {
+        self.events.randomize_reset_joints.params = {
             "position_range": (0.0, 0.0),
             "velocity_range": (0.0, 0.0),
         }

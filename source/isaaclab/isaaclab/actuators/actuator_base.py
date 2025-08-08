@@ -347,4 +347,5 @@ class ActuatorBase(ABC):
         Returns:
             The clipped torques.
         """
+        # print(self.effort_limit)
         return torch.clip(effort, min=-self.effort_limit, max=self.effort_limit)
